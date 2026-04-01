@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Android Invaders: Rebalanced</title>
+    <title>Android Invaders: Joystick Edition</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -60,41 +60,46 @@
             padding: 0 20px; box-sizing: border-box; z-index: 15;
         }
         
-        .d-pad {
-            display: grid; grid-template-columns: 55px 55px 55px; grid-template-rows: 55px 55px 55px;
-            gap: 5px; align-items: center; justify-items: center;
+        /* NEW ANALOG JOYSTICK */
+        #joystick-base {
+            width: 120px; height: 120px; background: rgba(0, 255, 255, 0.1);
+            border-radius: 50%; border: 2px solid rgba(0, 255, 255, 0.5);
+            position: relative; touch-action: none;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3), inset 0 0 15px rgba(0, 255, 255, 0.2);
+            margin-bottom: 10px;
         }
-        #up-btn { grid-column: 2; grid-row: 1; }
-        #left-btn { grid-column: 1; grid-row: 2; }
-        #right-btn { grid-column: 3; grid-row: 2; }
-        #down-btn { grid-column: 2; grid-row: 3; }
+        
+        #joystick-knob {
+            width: 50px; height: 50px; background: rgba(0, 255, 255, 0.7);
+            border-radius: 50%; position: absolute;
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px #0ff; pointer-events: none;
+            transition: transform 0.1s ease-out; /* Smooth snapping back to center */
+        }
 
         .action-buttons { display: flex; gap: 15px; align-items: flex-end; }
         
         .btn {
-            width: 55px; height: 55px; background: rgba(0, 255, 255, 0.1);
-            border-radius: 50%; border: 2px solid #0ff;
             display: flex; justify-content: center; align-items: center;
-            font-size: 20px; user-select: none; backdrop-filter: blur(2px);
-            box-shadow: 0 0 15px #0ff, inset 0 0 10px #0ff;
-            color: #0ff; text-shadow: 0 0 5px #0ff;
+            border-radius: 50%; user-select: none; backdrop-filter: blur(2px);
         }
-        .btn:active { background: rgba(0, 255, 255, 0.4); }
         
         #shoot-btn { 
             width: 80px; height: 80px; background: rgba(255, 0, 0, 0.1); font-size: 30px;
-            border-color: #f00; box-shadow: 0 0 15px #f00, inset 0 0 10px #f00;
+            border: 2px solid #f00; box-shadow: 0 0 15px #f00, inset 0 0 10px #f00;
         }
+        #shoot-btn:active { background: rgba(255, 0, 0, 0.4); }
         
         #nuke-btn { 
             width: 60px; height: 60px; background: rgba(255, 170, 0, 0.1); font-size: 24px;
-            border-color: #fa0; box-shadow: 0 0 10px #fa0, inset 0 0 5px #fa0; color: #fa0;
+            border: 2px solid #fa0; box-shadow: 0 0 10px #fa0, inset 0 0 5px #fa0; color: #fa0;
             opacity: 0.4; transition: opacity 0.3s, box-shadow 0.3s;
         }
         .nuke-ready { 
             background: rgba(255, 170, 0, 0.4) !important; 
             box-shadow: 0 0 30px #fa0, inset 0 0 15px #fa0 !important; opacity: 1 !important; 
         }
+        #nuke-btn:active { background: rgba(255, 170, 0, 0.6); }
     </style>
 </head>
 <body>
@@ -121,12 +126,10 @@
         <canvas id="gameCanvas"></canvas>
 
         <div id="controls">
-            <div class="d-pad">
-                <div class="btn" id="up-btn">▲</div>
-                <div class="btn" id="left-btn">◀</div>
-                <div class="btn" id="right-btn">▶</div>
-                <div class="btn" id="down-btn">▼</div>
+            <div id="joystick-base">
+                <div id="joystick-knob"></div>
             </div>
+            
             <div class="action-buttons">
                 <div class="btn" id="nuke-btn">☢️</div>
                 <div class="btn" id="shoot-btn">🔥</div>
@@ -179,7 +182,8 @@
         let isGameOver = false;
         let animationId;
 
-        const input = { left: false, right: false, up: false, down: false, shoot: false };
+        // Input state now holds analog values for joystick (-1.0 to 1.0)
+        const input = { left: false, right: false, up: false, down: false, shoot: false, joyX: 0, joyY: 0 };
         
         const player = { 
             x: 0, y: 0, width: 45, height: 45, 
@@ -197,14 +201,14 @@
         let bullets = [];
         let enemyBullets = [];
         let aliens = [];
+        let asteroids = []; 
         let powerups = [];
         let flashes = []; 
         let particles = [];
         let stars = [];
         
-        // REBALANCED ALIEN VARS
         let alienDirection = 1;
-        let alienSpeed = 0.5; // Slower start
+        let alienSpeed = 0.5; 
         let boss = null; 
 
         function updateHUD() {
@@ -238,6 +242,28 @@
             }
         }
 
+        function spawnAsteroid() {
+            let radius = Math.random() * 20 + 15; 
+            let numVertices = Math.floor(Math.random() * 5) + 7; 
+            let vertices = [];
+            
+            for(let i = 0; i < numVertices; i++) {
+                vertices.push(radius * (0.8 + Math.random() * 0.4));
+            }
+            
+            asteroids.push({
+                x: Math.random() * canvas.width,
+                y: -50,
+                vx: (Math.random() - 0.5) * 0.8, 
+                vy: Math.random() * 1.0 + 0.8,   
+                radius: radius,
+                vertices: vertices,
+                angle: 0,
+                spin: (Math.random() - 0.5) * 0.03, 
+                hp: Math.floor(radius / 10) 
+            });
+        }
+
         function createExplosion(x, y, color, scale = 1) {
             flashes.push({ x: x, y: y, radius: 25 * scale, life: 1.0, color: color });
             for(let i = 0; i < 40 * scale; i++) { 
@@ -254,7 +280,7 @@
 
         function startNextWave() {
             wave++;
-            bullets = []; enemyBullets = []; powerups = [];
+            bullets = []; enemyBullets = []; powerups = []; asteroids = [];
             
             if (wave % 3 === 0) {
                 boss = {
@@ -265,7 +291,6 @@
                 aliens = []; 
             } else {
                 boss = null;
-                // REBALANCED SPEED SCALING
                 alienSpeed = 0.5 + (wave * 0.1); 
                 initAliens();
             }
@@ -274,7 +299,6 @@
 
         function initAliens() {
             aliens = [];
-            // REBALANCED SPACING AND SIZE
             const rows = 4, cols = 5, padding = 50; 
             const startX = 100, startY = 60; 
             
@@ -284,7 +308,7 @@
                         x: startX + c * padding, 
                         y: startY + r * padding, 
                         targetY: startY + r * padding,
-                        width: 25, height: 25, // Smaller hitboxes and visuals
+                        width: 25, height: 25, 
                         alive: true 
                     });
                 }
@@ -340,6 +364,12 @@
                         addKill();
                     }
                 });
+
+                asteroids.forEach(ast => {
+                    createExplosion(ast.x, ast.y, '#ffaa00', 1.5);
+                    score += 5;
+                });
+                asteroids = [];
                 
                 if(boss) {
                     boss.hp -= 150; 
@@ -419,6 +449,33 @@
                 ctx.fillStyle = '#f00'; ctx.fillRect(boss.x - 50, boss.y - boss.height/2 - 20, 100 * (boss.hp / boss.maxHp), 10);
             }
 
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ff8800'; 
+            ctx.strokeStyle = '#ffaa00';
+            ctx.fillStyle = '#221100'; 
+            ctx.lineWidth = 2;
+            
+            asteroids.forEach(ast => {
+                ctx.save();
+                ctx.translate(ast.x, ast.y);
+                ctx.rotate(ast.angle);
+                ctx.beginPath();
+                
+                for(let i = 0; i < ast.vertices.length; i++) {
+                    let a = (i / ast.vertices.length) * Math.PI * 2;
+                    let r = ast.vertices[i];
+                    let x = Math.cos(a) * r;
+                    let y = Math.sin(a) * r;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+            });
+
             ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff'; ctx.fillStyle = '#ffffff'; 
             bullets.forEach(b => { 
                 if(b.pierce) { 
@@ -456,19 +513,38 @@
         function update(timestamp) {
             if (isGameOver) return;
 
+            // SPAWN RATE REDUCED BY 50%
+            if (Math.random() < 0.0075) {
+                spawnAsteroid();
+            }
+
             for(let i = flashes.length - 1; i >= 0; i--) { let f = flashes[i]; f.radius += 2; f.life -= 0.1; if(f.life <= 0) flashes.splice(i, 1); }
             for(let i = particles.length - 1; i >= 0; i--) { let p = particles[i]; p.x += p.vx; p.y += p.vy; p.life -= p.decay; if(p.life <= 0) particles.splice(i, 1); }
 
-            if (input.left && !input.right) player.x -= player.speed;
-            if (input.right && !input.left) player.x += player.speed;
-            if (input.up && !input.down) player.y -= player.speed;
-            if (input.down && !input.up) player.y += player.speed;
+            // ANALOG JOYSTICK AND KEYBOARD MOVEMENT
+            let moveX = input.joyX;
+            let moveY = input.joyY;
+            
+            // Override with keyboard if in use
+            if (input.left) moveX = -1;
+            if (input.right) moveX = 1;
+            if (input.up) moveY = -1;
+            if (input.down) moveY = 1;
+
+            // Normalize diagonal keyboard movement
+            if ((input.left || input.right) && (input.up || input.down)) {
+                moveX *= 0.707;
+                moveY *= 0.707;
+            }
+
+            player.x += player.speed * moveX;
+            player.y += player.speed * moveY;
             
             if (player.x < player.width/2) player.x = player.width/2;
             if (player.x > canvas.width - player.width/2) player.x = canvas.width - player.width/2;
             if (player.y < player.height/2) player.y = player.height/2;
             
-            const bottomBoundary = canvas.height - player.height/2 - 190;
+            const bottomBoundary = canvas.height - player.height/2 - 160; // Adjusted for joystick height
             if (player.y > bottomBoundary) player.y = bottomBoundary;
             
             if (input.shoot) tryShoot(timestamp);
@@ -480,6 +556,24 @@
             for(let i = enemyBullets.length - 1; i >= 0; i--) {
                 enemyBullets[i].y += enemyBullets[i].vy;
                 if(enemyBullets[i].y > canvas.height + 20) enemyBullets.splice(i, 1);
+            }
+
+            for(let i = asteroids.length - 1; i >= 0; i--) {
+                let ast = asteroids[i];
+                ast.x += ast.vx;
+                ast.y += ast.vy;
+                ast.angle += ast.spin;
+                
+                if (Math.abs(ast.x - player.x) < player.width/2 + ast.radius - 5 && 
+                    Math.abs(ast.y - player.y) < player.height/2 + ast.radius - 5) {
+                    hitPlayer(timestamp);
+                    createExplosion(ast.x, ast.y, '#ffaa00', 1.5);
+                    playSound(sfxExplosion);
+                    asteroids.splice(i, 1);
+                    continue;
+                }
+
+                if(ast.y > canvas.height + 50) asteroids.splice(i, 1);
             }
             
             for(let i = powerups.length - 1; i >= 0; i--) {
@@ -510,10 +604,8 @@
 
                 if (edgeHit) {
                     alienDirection *= -1;
-                    // REBALANCED SPEED INCREASE ON EDGE HIT
                     alienSpeed += 0.05; 
                     aliens.forEach(a => {
-                        // REBALANCED DROP DISTANCE
                         a.targetY += 30 + (wave * 2); 
                     });
                 }
@@ -521,7 +613,6 @@
                 aliens.forEach(a => {
                     if (!a.alive) return;
                     
-                    // SMOOTHER DROP (slower animation)
                     if (a.y < a.targetY) {
                         a.y += 2; 
                         if (a.y > a.targetY) a.y = a.targetY; 
@@ -555,28 +646,47 @@
                 let b = bullets[bIndex];
                 let hitSomething = false;
 
-                if (!boss) {
-                    for (let aIndex = 0; aIndex < aliens.length; aIndex++) {
-                        let a = aliens[aIndex];
-                        if (a.alive && Math.abs(b.x - a.x) < a.width/2 + 10 && Math.abs(b.y - a.y) < a.height/2 + 10) {
-                            a.alive = false; hitSomething = true;
-                            createExplosion(a.x, a.y, '#ff00ff'); playSound(sfxExplosion);
-                            addKill();
-                            if (Math.random() < 0.1) spawnPowerup(a.x, a.y); 
-                            break;
-                        }
-                    }
-                } else {
-                    if (Math.abs(b.x - boss.x) < boss.width/2 && Math.abs(b.y - boss.y) < boss.height/2) {
-                        boss.hp--; hitSomething = true;
-                        createExplosion(b.x, b.y, '#ff0000', 0.4); 
-                        score += 5; updateHUD();
-                        if (boss.hp <= 0) {
-                            createExplosion(boss.x, boss.y, '#ff0000', 3); 
+                for (let astIndex = 0; astIndex < asteroids.length; astIndex++) {
+                    let ast = asteroids[astIndex];
+                    if (Math.abs(b.x - ast.x) < ast.radius + 5 && Math.abs(b.y - ast.y) < ast.radius + 5) {
+                        ast.hp--;
+                        hitSomething = true;
+                        createExplosion(b.x, b.y, '#ffaa00', 0.5); 
+                        
+                        if (ast.hp <= 0) {
+                            createExplosion(ast.x, ast.y, '#ffaa00', 1.5);
                             playSound(sfxExplosion);
-                            score += 500; updateHUD();
-                            setTimeout(startNextWave, 2000); 
-                            boss = null;
+                            score += 5; updateHUD();
+                            asteroids.splice(astIndex, 1);
+                        }
+                        break; 
+                    }
+                }
+
+                if (!hitSomething) {
+                    if (!boss) {
+                        for (let aIndex = 0; aIndex < aliens.length; aIndex++) {
+                            let a = aliens[aIndex];
+                            if (a.alive && Math.abs(b.x - a.x) < a.width/2 + 10 && Math.abs(b.y - a.y) < a.height/2 + 10) {
+                                a.alive = false; hitSomething = true;
+                                createExplosion(a.x, a.y, '#ff00ff'); playSound(sfxExplosion);
+                                addKill();
+                                if (Math.random() < 0.1) spawnPowerup(a.x, a.y); 
+                                break;
+                            }
+                        }
+                    } else {
+                        if (Math.abs(b.x - boss.x) < boss.width/2 && Math.abs(b.y - boss.y) < boss.height/2) {
+                            boss.hp--; hitSomething = true;
+                            createExplosion(b.x, b.y, '#ff0000', 0.4); 
+                            score += 5; updateHUD();
+                            if (boss.hp <= 0) {
+                                createExplosion(boss.x, boss.y, '#ff0000', 3); 
+                                playSound(sfxExplosion);
+                                score += 500; updateHUD();
+                                setTimeout(startNextWave, 2000); 
+                                boss = null;
+                            }
                         }
                     }
                 }
@@ -628,27 +738,21 @@
             document.getElementById('weapon-display').innerText = weaponNames[0];
             updateHUD();
             
-            bullets = []; enemyBullets = []; particles = []; flashes = []; powerups = []; alienSpeed = 0.5; boss = null;
+            bullets = []; enemyBullets = []; particles = []; flashes = []; powerups = []; asteroids = []; 
+            alienSpeed = 0.5; boss = null;
             input.left = false; input.right = false; input.up = false; input.down = false; input.shoot = false;
+            input.joyX = 0; input.joyY = 0;
             initAliens(); isGameOver = false;
         }
 
-        // --- INPUT ---
+        // --- INPUT: ACTION BUTTONS & KEYBOARD ---
         window.addEventListener('touchstart', startMusic, { once: true });
         window.addEventListener('click', startMusic, { once: true });
 
-        function bindBtn(id, key) {
-            const btn = document.getElementById(id);
-            btn.addEventListener('touchstart', (e) => { e.preventDefault(); input[key] = true; startMusic(); }, {passive: false});
-            btn.addEventListener('touchend', (e) => { e.preventDefault(); input[key] = false; }, {passive: false});
-            btn.addEventListener('touchcancel', (e) => { e.preventDefault(); input[key] = false; }, {passive: false}); 
-        }
-
-        bindBtn('up-btn', 'up');
-        bindBtn('down-btn', 'down');
-        bindBtn('left-btn', 'left');
-        bindBtn('right-btn', 'right');
-        bindBtn('shoot-btn', 'shoot');
+        const shootBtn = document.getElementById('shoot-btn');
+        shootBtn.addEventListener('touchstart', (e) => { e.preventDefault(); input.shoot = true; startMusic(); }, {passive: false});
+        shootBtn.addEventListener('touchend', (e) => { e.preventDefault(); input.shoot = false; }, {passive: false});
+        shootBtn.addEventListener('touchcancel', (e) => { e.preventDefault(); input.shoot = false; }, {passive: false});
 
         document.getElementById('nuke-btn').addEventListener('touchstart', (e) => { 
             e.preventDefault(); triggerNuke(); startMusic(); 
@@ -671,6 +775,65 @@
             if (e.key === ' ') input.shoot = false;
         });
 
+        // --- INPUT: VIRTUAL JOYSTICK ---
+        const joyBase = document.getElementById('joystick-base');
+        const joyKnob = document.getElementById('joystick-knob');
+        const maxDist = 35; // Maximum pixel distance the knob can move from center
+        let joyActive = false;
+        let joyOriginX = 0;
+        let joyOriginY = 0;
+
+        function updateJoystick(clientX, clientY) {
+            let deltaX = clientX - joyOriginX;
+            let deltaY = clientY - joyOriginY;
+            let dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            
+            // Constrain knob to the base boundary
+            if (dist > maxDist) {
+                deltaX = (deltaX / dist) * maxDist;
+                deltaY = (deltaY / dist) * maxDist;
+            }
+            
+            // Normalize values between -1.0 and 1.0 for player movement
+            input.joyX = deltaX / maxDist;
+            input.joyY = deltaY / maxDist;
+            
+            joyKnob.style.transition = 'none'; // Remove smooth snapping while dragging
+            joyKnob.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
+        }
+
+        joyBase.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            startMusic();
+            joyActive = true;
+            const touch = e.changedTouches[0];
+            const rect = joyBase.getBoundingClientRect();
+            // Calculate absolute center of the joystick on screen
+            joyOriginX = rect.left + rect.width / 2;
+            joyOriginY = rect.top + rect.height / 2;
+            updateJoystick(touch.clientX, touch.clientY);
+        }, {passive: false});
+
+        joyBase.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!joyActive) return;
+            const touch = e.changedTouches[0];
+            updateJoystick(touch.clientX, touch.clientY);
+        }, {passive: false});
+
+        const resetJoystick = (e) => {
+            e.preventDefault();
+            joyActive = false;
+            input.joyX = 0;
+            input.joyY = 0;
+            joyKnob.style.transition = 'transform 0.1s ease-out'; // Smooth snap back
+            joyKnob.style.transform = `translate(-50%, -50%)`;
+        };
+
+        joyBase.addEventListener('touchend', resetJoystick, {passive: false});
+        joyBase.addEventListener('touchcancel', resetJoystick, {passive: false});
+
+        // INIT
         initStars();
         player.x = canvas.width / 2;
         player.y = canvas.height - 250;
