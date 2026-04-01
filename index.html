@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Android Invaders: Joystick Edition</title>
+    <title>Android Invaders: Multi-Touch Fixed</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -60,7 +60,6 @@
             padding: 0 20px; box-sizing: border-box; z-index: 15;
         }
         
-        /* NEW ANALOG JOYSTICK */
         #joystick-base {
             width: 120px; height: 120px; background: rgba(0, 255, 255, 0.1);
             border-radius: 50%; border: 2px solid rgba(0, 255, 255, 0.5);
@@ -74,7 +73,7 @@
             border-radius: 50%; position: absolute;
             top: 50%; left: 50%; transform: translate(-50%, -50%);
             box-shadow: 0 0 10px #0ff; pointer-events: none;
-            transition: transform 0.1s ease-out; /* Smooth snapping back to center */
+            transition: transform 0.1s ease-out; 
         }
 
         .action-buttons { display: flex; gap: 15px; align-items: flex-end; }
@@ -87,6 +86,7 @@
         #shoot-btn { 
             width: 80px; height: 80px; background: rgba(255, 0, 0, 0.1); font-size: 30px;
             border: 2px solid #f00; box-shadow: 0 0 15px #f00, inset 0 0 10px #f00;
+            touch-action: none;
         }
         #shoot-btn:active { background: rgba(255, 0, 0, 0.4); }
         
@@ -94,6 +94,7 @@
             width: 60px; height: 60px; background: rgba(255, 170, 0, 0.1); font-size: 24px;
             border: 2px solid #fa0; box-shadow: 0 0 10px #fa0, inset 0 0 5px #fa0; color: #fa0;
             opacity: 0.4; transition: opacity 0.3s, box-shadow 0.3s;
+            touch-action: none;
         }
         .nuke-ready { 
             background: rgba(255, 170, 0, 0.4) !important; 
@@ -182,7 +183,6 @@
         let isGameOver = false;
         let animationId;
 
-        // Input state now holds analog values for joystick (-1.0 to 1.0)
         const input = { left: false, right: false, up: false, down: false, shoot: false, joyX: 0, joyY: 0 };
         
         const player = { 
@@ -513,7 +513,6 @@
         function update(timestamp) {
             if (isGameOver) return;
 
-            // SPAWN RATE REDUCED BY 50%
             if (Math.random() < 0.0075) {
                 spawnAsteroid();
             }
@@ -521,17 +520,14 @@
             for(let i = flashes.length - 1; i >= 0; i--) { let f = flashes[i]; f.radius += 2; f.life -= 0.1; if(f.life <= 0) flashes.splice(i, 1); }
             for(let i = particles.length - 1; i >= 0; i--) { let p = particles[i]; p.x += p.vx; p.y += p.vy; p.life -= p.decay; if(p.life <= 0) particles.splice(i, 1); }
 
-            // ANALOG JOYSTICK AND KEYBOARD MOVEMENT
             let moveX = input.joyX;
             let moveY = input.joyY;
             
-            // Override with keyboard if in use
             if (input.left) moveX = -1;
             if (input.right) moveX = 1;
             if (input.up) moveY = -1;
             if (input.down) moveY = 1;
 
-            // Normalize diagonal keyboard movement
             if ((input.left || input.right) && (input.up || input.down)) {
                 moveX *= 0.707;
                 moveY *= 0.707;
@@ -544,7 +540,7 @@
             if (player.x > canvas.width - player.width/2) player.x = canvas.width - player.width/2;
             if (player.y < player.height/2) player.y = player.height/2;
             
-            const bottomBoundary = canvas.height - player.height/2 - 160; // Adjusted for joystick height
+            const bottomBoundary = canvas.height - player.height/2 - 160; 
             if (player.y > bottomBoundary) player.y = bottomBoundary;
             
             if (input.shoot) tryShoot(timestamp);
@@ -775,11 +771,12 @@
             if (e.key === ' ') input.shoot = false;
         });
 
-        // --- INPUT: VIRTUAL JOYSTICK ---
+        // --- INPUT: VIRTUAL JOYSTICK MULTI-TOUCH FIX ---
         const joyBase = document.getElementById('joystick-base');
         const joyKnob = document.getElementById('joystick-knob');
-        const maxDist = 35; // Maximum pixel distance the knob can move from center
+        const maxDist = 35; 
         let joyActive = false;
+        let joyTouchId = null; // NEW: Tracks the specific finger on the joystick
         let joyOriginX = 0;
         let joyOriginY = 0;
 
@@ -788,46 +785,68 @@
             let deltaY = clientY - joyOriginY;
             let dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
             
-            // Constrain knob to the base boundary
             if (dist > maxDist) {
                 deltaX = (deltaX / dist) * maxDist;
                 deltaY = (deltaY / dist) * maxDist;
             }
             
-            // Normalize values between -1.0 and 1.0 for player movement
             input.joyX = deltaX / maxDist;
             input.joyY = deltaY / maxDist;
             
-            joyKnob.style.transition = 'none'; // Remove smooth snapping while dragging
+            joyKnob.style.transition = 'none'; 
             joyKnob.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
         }
 
         joyBase.addEventListener('touchstart', (e) => {
             e.preventDefault();
             startMusic();
-            joyActive = true;
-            const touch = e.changedTouches[0];
-            const rect = joyBase.getBoundingClientRect();
-            // Calculate absolute center of the joystick on screen
-            joyOriginX = rect.left + rect.width / 2;
-            joyOriginY = rect.top + rect.height / 2;
-            updateJoystick(touch.clientX, touch.clientY);
+            if (joyActive) return; // Prevent grabbing a second finger
+            
+            // Lock onto the specific touch that started on the base
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                joyTouchId = touch.identifier;
+                joyActive = true;
+                
+                const rect = joyBase.getBoundingClientRect();
+                joyOriginX = rect.left + rect.width / 2;
+                joyOriginY = rect.top + rect.height / 2;
+                updateJoystick(touch.clientX, touch.clientY);
+                break; 
+            }
         }, {passive: false});
 
         joyBase.addEventListener('touchmove', (e) => {
             e.preventDefault();
             if (!joyActive) return;
-            const touch = e.changedTouches[0];
-            updateJoystick(touch.clientX, touch.clientY);
+            
+            // Only update if the moving finger is our locked joystick finger
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                if (touch.identifier === joyTouchId) {
+                    updateJoystick(touch.clientX, touch.clientY);
+                    break;
+                }
+            }
         }, {passive: false});
 
         const resetJoystick = (e) => {
             e.preventDefault();
-            joyActive = false;
-            input.joyX = 0;
-            input.joyY = 0;
-            joyKnob.style.transition = 'transform 0.1s ease-out'; // Smooth snap back
-            joyKnob.style.transform = `translate(-50%, -50%)`;
+            if (!joyActive) return;
+
+            // Only reset if the lifted finger is our locked joystick finger
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                if (touch.identifier === joyTouchId) {
+                    joyActive = false;
+                    joyTouchId = null;
+                    input.joyX = 0;
+                    input.joyY = 0;
+                    joyKnob.style.transition = 'transform 0.1s ease-out'; 
+                    joyKnob.style.transform = `translate(-50%, -50%)`;
+                    break;
+                }
+            }
         };
 
         joyBase.addEventListener('touchend', resetJoystick, {passive: false});
