@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Android Invaders: Multi-Touch Fixed</title>
+    <title>Android Invaders: Ultimate Mobile Edition</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -60,6 +60,7 @@
             padding: 0 20px; box-sizing: border-box; z-index: 15;
         }
         
+        /* ANALOG JOYSTICK */
         #joystick-base {
             width: 120px; height: 120px; background: rgba(0, 255, 255, 0.1);
             border-radius: 50%; border: 2px solid rgba(0, 255, 255, 0.5);
@@ -147,23 +148,44 @@
 
         // --- AUDIO ---
         const bgMusic = new Audio('2019-12-11_-_Retro_Platforming_-_David_Fesliyan.mp3');
-        bgMusic.loop = true; bgMusic.volume = 0.4; 
-        let musicStarted = false;
-        const sfxShoot = new Audio('freesound_community-laser-45816.mp3'); sfxShoot.volume = 0.2;
-        const sfxExplosion = new Audio('rajatchoudhary-single-clap-sound-effect-355862.mp3'); sfxExplosion.volume = 0.5;
+        bgMusic.loop = true; 
+        bgMusic.volume = 0.4; 
+        
+        const sfxShoot = new Audio('freesound_community-laser-45816.mp3'); 
+        sfxShoot.volume = 0.2;
+        
+        const sfxExplosion = new Audio('rajatchoudhary-single-clap-sound-effect-355862.mp3'); 
+        sfxExplosion.volume = 0.5;
 
-        function startMusic() {
-            if (!musicStarted) {
-                bgMusic.play().catch(e => console.log("Waiting for user interaction."));
+        let musicStarted = false;
+
+        // BULLETPROOF MOBILE AUDIO UNLOCKER
+        function unlockAudio() {
+            if (musicStarted) return;
+            
+            // Force browser to load files into memory
+            sfxShoot.load();
+            sfxExplosion.load();
+            
+            bgMusic.play().then(() => {
                 musicStarted = true;
-            }
+                document.removeEventListener('touchstart', unlockAudio);
+                document.removeEventListener('click', unlockAudio);
+            }).catch(e => {
+                console.log("Waiting for a cleaner interaction to start audio...");
+            });
         }
+
+        // Global listeners to catch the first tap anywhere
+        document.addEventListener('touchstart', unlockAudio, { once: false });
+        document.addEventListener('click', unlockAudio, { once: false });
+
         function playSound(audioNode) {
             if (!musicStarted) return; 
             const clone = audioNode.cloneNode();
             clone.volume = audioNode.volume;
             if (audioNode === sfxExplosion) {
-                clone.currentTime = 0.15; 
+                clone.currentTime = 0.15; // Sync fix
             }
             clone.play().catch(e => {});
         }
@@ -742,20 +764,17 @@
         }
 
         // --- INPUT: ACTION BUTTONS & KEYBOARD ---
-        window.addEventListener('touchstart', startMusic, { once: true });
-        window.addEventListener('click', startMusic, { once: true });
-
         const shootBtn = document.getElementById('shoot-btn');
-        shootBtn.addEventListener('touchstart', (e) => { e.preventDefault(); input.shoot = true; startMusic(); }, {passive: false});
+        shootBtn.addEventListener('touchstart', (e) => { e.preventDefault(); input.shoot = true; unlockAudio(); }, {passive: false});
         shootBtn.addEventListener('touchend', (e) => { e.preventDefault(); input.shoot = false; }, {passive: false});
         shootBtn.addEventListener('touchcancel', (e) => { e.preventDefault(); input.shoot = false; }, {passive: false});
 
         document.getElementById('nuke-btn').addEventListener('touchstart', (e) => { 
-            e.preventDefault(); triggerNuke(); startMusic(); 
+            e.preventDefault(); triggerNuke(); unlockAudio(); 
         }, {passive: false});
 
         window.addEventListener('keydown', (e) => {
-            startMusic(); 
+            unlockAudio(); 
             if (e.key === 'ArrowLeft' || e.key === 'a') input.left = true;
             if (e.key === 'ArrowRight' || e.key === 'd') input.right = true;
             if (e.key === 'ArrowUp' || e.key === 'w') input.up = true;
@@ -776,7 +795,7 @@
         const joyKnob = document.getElementById('joystick-knob');
         const maxDist = 35; 
         let joyActive = false;
-        let joyTouchId = null; // NEW: Tracks the specific finger on the joystick
+        let joyTouchId = null; 
         let joyOriginX = 0;
         let joyOriginY = 0;
 
@@ -799,10 +818,9 @@
 
         joyBase.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            startMusic();
-            if (joyActive) return; // Prevent grabbing a second finger
+            unlockAudio();
+            if (joyActive) return; 
             
-            // Lock onto the specific touch that started on the base
             for (let i = 0; i < e.changedTouches.length; i++) {
                 const touch = e.changedTouches[i];
                 joyTouchId = touch.identifier;
@@ -820,7 +838,6 @@
             e.preventDefault();
             if (!joyActive) return;
             
-            // Only update if the moving finger is our locked joystick finger
             for (let i = 0; i < e.changedTouches.length; i++) {
                 const touch = e.changedTouches[i];
                 if (touch.identifier === joyTouchId) {
@@ -834,7 +851,6 @@
             e.preventDefault();
             if (!joyActive) return;
 
-            // Only reset if the lifted finger is our locked joystick finger
             for (let i = 0; i < e.changedTouches.length; i++) {
                 const touch = e.changedTouches[i];
                 if (touch.identifier === joyTouchId) {
