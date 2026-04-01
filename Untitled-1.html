@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Android Invaders: Omni & Nuke Edition</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #020208;
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden; touch-action: none;
+        }
+        canvas { display: block; width: 100%; height: 100%; }
+        
+        #ui {
+            position: absolute; top: 10px; left: 10px; right: 10px;
+            display: flex; justify-content: space-between;
+            font-size: 16px; font-weight: bold; pointer-events: none;
+            color: #fff; text-shadow: 0 0 5px #0ff, 0 0 10px #0ff; z-index: 10;
+        }
+        .ui-column { display: flex; flex-direction: column; gap: 5px; }
+        .text-right { text-align: right; }
+        .weapon-text { color: #f0f; text-shadow: 0 0 5px #f0f, 0 0 10px #f0f; }
+        
+        #game-over {
+            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; display: none; z-index: 20;
+        }
+        #game-over h1 { 
+            color: #fff; font-size: 38px; margin-bottom: 10px; 
+            text-shadow: 0 0 10px #f00, 0 0 20px #f00, 0 0 40px #f00;
+        }
+        #restart-btn {
+            margin-top: 15px; padding: 12px 24px; font-size: 18px;
+            background: transparent; color: #0f0; border: 2px solid #0f0; font-weight: bold;
+            border-radius: 5px; cursor: pointer; pointer-events: auto;
+            box-shadow: 0 0 10px #0f0, inset 0 0 10px #0f0; text-shadow: 0 0 5px #0f0;
+        }
+        #restart-btn:active { background: rgba(0, 255, 0, 0.2); }
+        
+        /* New Omni-directional Controls */
+        #controls {
+            position: absolute; bottom: 20px; left: 0; width: 100%;
+            display: flex; justify-content: space-between; align-items: flex-end; 
+            padding: 0 20px; box-sizing: border-box; z-index: 15;
+        }
+        
+        .d-pad {
+            display: grid; grid-template-columns: 55px 55px 55px; grid-template-rows: 55px 55px 55px;
+            gap: 5px; align-items: center; justify-items: center;
+        }
+        #up-btn { grid-column: 2; grid-row: 1; }
+        #left-btn { grid-column: 1; grid-row: 2; }
+        #right-btn { grid-column: 3; grid-row: 2; }
+        #down-btn { grid-column: 2; grid-row: 3; }
+
+        .action-buttons { display: flex; gap: 15px; align-items: flex-end; }
+        
+        .btn {
+            width: 55px; height: 55px; background: rgba(0, 255, 255, 0.1);
+            border-radius: 50%; border: 2px solid #0ff;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 20px; user-select: none; backdrop-filter: blur(2px);
+            box-shadow: 0 0 15px #0ff, inset 0 0 10px #0ff;
+            color: #0ff; text-shadow: 0 0 5px #0ff;
+        }
+        .btn:active { background: rgba(0, 255, 255, 0.4); }
+        
+        #shoot-btn { 
+            width: 80px; height: 80px; background: rgba(255, 0, 0, 0.1); font-size: 30px;
+            border-color: #f00; box-shadow: 0 0 15px #f00, inset 0 0 10px #f00;
+        }
+        
+        #nuke-btn { 
+            width: 60px; height: 60px; background: rgba(255, 170, 0, 0.1); font-size: 24px;
+            border-color: #fa0; box-shadow: 0 0 10px #fa0, inset 0 0 5px #fa0; color: #fa0;
+            opacity: 0.4; transition: opacity 0.3s, box-shadow 0.3s;
+        }
+        .nuke-ready { 
+            background: rgba(255, 170, 0, 0.4) !important; 
+            box-shadow: 0 0 30px #fa0, inset 0 0 15px #fa0 !important; opacity: 1 !important; 
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <div class="ui-column">
+            <div>HP: <span id="hp-display">❤️❤️❤️</span></div>
+            <div>SCORE: <span id="score">0</span></div>
+            <div>WAVE: <span id="wave">1</span></div>
+        </div>
+        <div class="ui-column text-right">
+            <div>HIGH: <span id="highscore">0</span></div>
+            <div class="weapon-text" id="weapon-display">LVL 0: SINGLE</div>
+            <div id="nuke-display" style="color: gray; text-shadow: none;">NUKE: 0/50</div>
+        </div>
+    </div>
+
+    <div id="game-over">
+        <h1>GAME OVER</h1>
+        <button id="restart-btn" onclick="resetGame()">TAP TO RESTART</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="controls">
+        <div class="d-pad">
+            <div class="btn" id="up-btn">▲</div>
+            <div class="btn" id="left-btn">◀</div>
+            <div class="btn" id="right-btn">▶</div>
+            <div class="btn" id="down-btn">▼</div>
+        </div>
+        <div class="action-buttons">
+            <div class="btn" id="nuke-btn">☢️</div>
+            <div class="btn" id="shoot-btn">🔥</div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            initStars();
+        }
+        window.addEventListener('resize', resize);
+
+        // --- AUDIO ---
+        const bgMusic = new Audio('2019-12-11_-_Retro_Platforming_-_David_Fesliyan.mp3');
+        bgMusic.loop = true; bgMusic.volume = 0.4; 
+        let musicStarted = false;
+        const sfxShoot = new Audio('freesound_community-laser-45816.mp3'); sfxShoot.volume = 0.2;
+        const sfxExplosion = new Audio('rajatchoudhary-single-clap-sound-effect-355862.mp3'); sfxExplosion.volume = 0.5;
+
+        function startMusic() {
+            if (!musicStarted) {
+                bgMusic.play().catch(e => console.log("Waiting for user interaction."));
+                musicStarted = true;
+            }
+        }
+        function playSound(audioNode) {
+            if (!musicStarted) return; 
+            const clone = audioNode.cloneNode();
+            clone.volume = audioNode.volume;
+            clone.play().catch(e => {});
+        }
+
+        // --- ASSETS ---
+        const playerImg = new Image(); playerImg.src = 'spaceShips_002.png'; 
+        const alienImg = new Image(); alienImg.src = 'alien.png';
+        let assetsLoaded = 0; const totalAssets = 2;
+        function assetLoaded() { assetsLoaded++; if (assetsLoaded === totalAssets) requestAnimationFrame(loop); }
+        playerImg.onload = assetLoaded; alienImg.onload = assetLoaded;
+        playerImg.onerror = () => assetLoaded(); alienImg.onerror = () => assetLoaded();
+
+        // --- GAME STATE ---
+        let score = 0;
+        let wave = 1;
+        let highScore = localStorage.getItem('invadersHighScore') || 0;
+        let isGameOver = false;
+        let animationId;
+
+        const input = { left: false, right: false, up: false, down: false, shoot: false };
+        
+        const player = { 
+            x: 0, y: 0, width: 45, height: 45, 
+            baseSpeed: 7, speed: 7, 
+            weaponLevel: 0,
+            baseFireRate: 350, fireRate: 350, 
+            lastShotTime: 0,
+            hp: 3, maxHp: 3,
+            invulnerableUntil: 0,
+            killsForNuke: 0
+        }; 
+
+        const weaponNames = ["LVL 0: SINGLE", "LVL 1: DUAL", "LVL 2: TRIPLE", "LVL 3: PLASMA LASER"];
+
+        let bullets = [];
+        let enemyBullets = [];
+        let aliens = [];
+        let powerups = [];
+        let flashes = []; 
+        let particles = [];
+        let stars = [];
+        let alienDirection = 1;
+        let alienSpeed = 1;
+        let boss = null; 
+
+        // --- HUD UPDATER ---
+        function updateHUD() {
+            document.getElementById('score').innerText = score;
+            document.getElementById('wave').innerText = wave;
+            
+            let hpStr = "";
+            for(let i = 0; i < player.hp; i++) hpStr += "❤️";
+            document.getElementById('hp-display').innerText = hpStr || "💀";
+            
+            let nukeText = document.getElementById('nuke-display');
+            let nukeBtn = document.getElementById('nuke-btn');
+            
+            if (player.killsForNuke >= 50) {
+                nukeText.innerText = "NUKE: READY!";
+                nukeText.style.color = "#fa0";
+                nukeText.style.textShadow = "0 0 10px #fa0";
+                nukeBtn.classList.add("nuke-ready");
+            } else {
+                nukeText.innerText = `NUKE: ${player.killsForNuke}/50`;
+                nukeText.style.color = "gray";
+                nukeText.style.textShadow = "none";
+                nukeBtn.classList.remove("nuke-ready");
+            }
+        }
+
+        function initStars() {
+            stars = [];
+            for(let i = 0; i < 75; i++) {
+                stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: Math.random() * 1.5 + 0.5, speed: Math.random() * 2 + 0.2 });
+            }
+        }
+
+        function createExplosion(x, y, color, scale = 1) {
+            flashes.push({ x: x, y: y, radius: 25 * scale, life: 1.0, color: color });
+            for(let i = 0; i < 40 * scale; i++) { 
+                const angle = Math.random() * Math.PI * 2;
+                const speed = (Math.random() * 8 + 2) * scale; 
+                particles.push({
+                    x: x, y: y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                    life: 1.0, size: Math.random() * 4 + 1, 
+                    color: Math.random() > 0.6 ? '#ffffff' : color,
+                    decay: Math.random() * 0.03 + 0.02 
+                });
+            }
+        }
+
+        // --- SPAWNING LOGIC ---
+        function startNextWave() {
+            wave++;
+            bullets = []; enemyBullets = []; powerups = [];
+            
+            if (wave % 3 === 0) {
+                boss = {
+                    x: canvas.width / 2, y: 100, width: 120, height: 120,
+                    hp: 50 + (wave * 15), maxHp: 50 + (wave * 15),
+                    vx: 3 + (wave * 0.2), lastShot: 0, fireRate: 700 - (wave * 20)
+                };
+                aliens = []; 
+            } else {
+                boss = null;
+                alienSpeed = 1 + (wave * 0.2); 
+                initAliens();
+            }
+            updateHUD();
+        }
+
+        function initAliens() {
+            aliens = [];
+            const rows = 4, cols = 5, padding = 65; 
+            const startX = 50, startY = 70;
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    aliens.push({ x: startX + c * padding, y: startY + r * padding, width: 35, height: 35, alive: true });
+                }
+            }
+        }
+
+        function spawnPowerup(x, y) {
+            const types = ['weapon', 'speed', 'rapid'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            let color, letter;
+            
+            if(type === 'weapon') { color = '#ff00ff'; letter = 'W'; }
+            if(type === 'speed') { color = '#00ffff'; letter = 'S'; }
+            if(type === 'rapid') { color = '#ffff00'; letter = 'R'; }
+
+            powerups.push({ x: x, y: y, size: 20, type: type, color: color, letter: letter, vy: 2 });
+        }
+
+        function addKill() {
+            score += 10;
+            if (player.killsForNuke < 50) {
+                player.killsForNuke++;
+            }
+            updateHUD();
+        }
+
+        // --- ACTIONS ---
+        function hitPlayer(timestamp) {
+            if (timestamp < player.invulnerableUntil || isGameOver) return;
+            
+            player.hp--;
+            playSound(sfxExplosion);
+            createExplosion(player.x, player.y, '#ff0000', 1.5);
+            updateHUD();
+
+            if (player.hp <= 0) {
+                gameOver();
+            } else {
+                player.invulnerableUntil = timestamp + 1000; // 1 second of I-Frames
+            }
+        }
+
+        function triggerNuke() {
+            if (player.killsForNuke >= 50 && !isGameOver) {
+                player.killsForNuke = 0;
+                playSound(sfxExplosion); 
+                
+                // Nuke Screen Flash
+                flashes.push({ x: canvas.width/2, y: canvas.height/2, radius: canvas.height, life: 1.0, color: '#ffaa00' });
+                
+                aliens.forEach(a => {
+                    if(a.alive) {
+                        a.alive = false;
+                        createExplosion(a.x, a.y, '#ff00ff');
+                        addKill();
+                    }
+                });
+                
+                if(boss) {
+                    boss.hp -= 150; 
+                    createExplosion(boss.x, boss.y, '#ff0000', 3);
+                    if(boss.hp <= 0) {
+                        score += 500;
+                        setTimeout(startNextWave, 2000);
+                        boss = null;
+                    }
+                }
+                
+                enemyBullets = []; // Vaporize incoming fire
+                updateHUD();
+            }
+        }
+
+        function tryShoot(timestamp) {
+            if (timestamp - player.lastShotTime > player.fireRate) {
+                player.lastShotTime = timestamp;
+                playSound(sfxShoot);
+
+                let speed = 14;
+                switch(player.weaponLevel) {
+                    case 0: 
+                        bullets.push({ x: player.x, y: player.y - player.height/2, vx: 0, vy: -speed, pierce: false }); break;
+                    case 1: 
+                        bullets.push({ x: player.x - 15, y: player.y - player.height/2, vx: 0, vy: -speed, pierce: false });
+                        bullets.push({ x: player.x + 15, y: player.y - player.height/2, vx: 0, vy: -speed, pierce: false }); break;
+                    case 2: 
+                        bullets.push({ x: player.x, y: player.y - player.height/2, vx: 0, vy: -speed, pierce: false });
+                        bullets.push({ x: player.x - 12, y: player.y - player.height/2, vx: -3, vy: -speed*0.9, pierce: false });
+                        bullets.push({ x: player.x + 12, y: player.y - player.height/2, vx: 3, vy: -speed*0.9, pierce: false }); break;
+                    case 3: 
+                    default:
+                        bullets.push({ x: player.x, y: player.y - player.height/2, vx: 0, vy: -speed*2.5, pierce: true }); break;
+                }
+            }
+        }
+
+        // --- DRAWING ---
+        function drawEntities(timestamp) {
+            // Stars
+            ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff';
+            stars.forEach(s => {
+                ctx.globalAlpha = s.size / 2; ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI*2); ctx.fill();
+                if (!isGameOver) s.y += s.speed;
+                if (s.y > canvas.height) { s.y = 0; s.x = Math.random() * canvas.width; }
+            });
+            ctx.globalAlpha = 1.0;
+
+            // Player (with I-Frame Blinking)
+            if (!(timestamp < player.invulnerableUntil && Math.floor(timestamp / 100) % 2 === 0)) {
+                ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff';
+                if (playerImg.complete && playerImg.naturalHeight !== 0) {
+                    ctx.drawImage(playerImg, player.x - player.width/2, player.y - player.height/2, player.width, player.height);
+                } else {
+                    ctx.fillStyle = '#00ffff'; ctx.fillRect(player.x - player.width/2, player.y - player.height/2, player.width, player.height);
+                }
+            }
+
+            // Aliens
+            ctx.shadowColor = '#ff00ff';
+            aliens.forEach(a => {
+                if (!a.alive) return;
+                if (alienImg.complete && alienImg.naturalHeight !== 0) {
+                    ctx.drawImage(alienImg, a.x - a.width/2, a.y - a.height/2, a.width, a.height);
+                } else {
+                    ctx.fillStyle = '#ff00ff'; ctx.fillRect(a.x - a.width/2, a.y - a.height/2, a.width, a.height);
+                }
+            });
+
+            // Boss
+            if (boss) {
+                ctx.shadowColor = '#ff0000';
+                if (alienImg.complete && alienImg.naturalHeight !== 0) {
+                    ctx.drawImage(alienImg, boss.x - boss.width/2, boss.y - boss.height/2, boss.width, boss.height);
+                } else {
+                    ctx.fillStyle = '#ff0000'; ctx.fillRect(boss.x - boss.width/2, boss.y - boss.height/2, boss.width, boss.height);
+                }
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#333'; ctx.fillRect(boss.x - 50, boss.y - boss.height/2 - 20, 100, 10);
+                ctx.fillStyle = '#f00'; ctx.fillRect(boss.x - 50, boss.y - boss.height/2 - 20, 100 * (boss.hp / boss.maxHp), 10);
+            }
+
+            // Bullets
+            ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff'; ctx.fillStyle = '#ffffff'; 
+            bullets.forEach(b => { 
+                if(b.pierce) { 
+                    ctx.shadowColor = '#ff00ff'; ctx.fillRect(b.x - 5, b.y - 25, 10, 50); 
+                } else {
+                    ctx.fillRect(b.x - 2, b.y - 8, 4, 16); 
+                }
+            });
+
+            ctx.shadowColor = '#ff0000'; ctx.fillStyle = '#ffaaaa'; 
+            enemyBullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI*2); ctx.fill(); });
+
+            // Powerups
+            powerups.forEach(p => {
+                ctx.shadowColor = p.color; ctx.fillStyle = '#222'; ctx.strokeStyle = p.color; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                ctx.fillStyle = p.color; ctx.font = "bold 16px Courier"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                ctx.fillText(p.letter, p.x, p.y + 1);
+            });
+
+            ctx.shadowBlur = 0; 
+        }
+
+        function drawEffects() {
+            for(let f of flashes) {
+                ctx.globalAlpha = f.life; ctx.shadowBlur = 20; ctx.shadowColor = f.color; ctx.fillStyle = '#ffffff';
+                ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2); ctx.fill();
+            }
+            for(let p of particles) {
+                ctx.globalAlpha = p.life; ctx.shadowBlur = 10; ctx.shadowColor = p.color;
+                ctx.fillStyle = p.life > 0.6 ? '#ffffff' : p.color; ctx.fillRect(p.x, p.y, p.size, p.size);
+            }
+            ctx.globalAlpha = 1.0; ctx.shadowBlur = 0; 
+        }
+
+        // --- UPDATE LOOP ---
+        function update(timestamp) {
+            if (isGameOver) return;
+
+            for(let i = flashes.length - 1; i >= 0; i--) { let f = flashes[i]; f.radius += 2; f.life -= 0.1; if(f.life <= 0) flashes.splice(i, 1); }
+            for(let i = particles.length - 1; i >= 0; i--) { let p = particles[i]; p.x += p.vx; p.y += p.vy; p.life -= p.decay; if(p.life <= 0) particles.splice(i, 1); }
+
+            // OMNI-DIRECTIONAL MOVEMENT
+            if (input.left && !input.right) player.x -= player.speed;
+            if (input.right && !input.left) player.x += player.speed;
+            if (input.up && !input.down) player.y -= player.speed;
+            if (input.down && !input.up) player.y += player.speed;
+            
+            // Bounds
+            if (player.x < player.width/2) player.x = player.width/2;
+            if (player.x > canvas.width - player.width/2) player.x = canvas.width - player.width/2;
+            if (player.y < player.height/2) player.y = player.height/2;
+            // Prevent player from hiding under the UI buttons
+            const bottomBoundary = canvas.height - player.height/2 - 190;
+            if (player.y > bottomBoundary) player.y = bottomBoundary;
+            
+            if (input.shoot) tryShoot(timestamp);
+
+            for(let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].x += bullets[i].vx; bullets[i].y += bullets[i].vy;
+                if(bullets[i].y < -50 || bullets[i].x < -50 || bullets[i].x > canvas.width + 50) bullets.splice(i, 1);
+            }
+            for(let i = enemyBullets.length - 1; i >= 0; i--) {
+                enemyBullets[i].y += enemyBullets[i].vy;
+                if(enemyBullets[i].y > canvas.height + 20) enemyBullets.splice(i, 1);
+            }
+            
+            for(let i = powerups.length - 1; i >= 0; i--) {
+                let p = powerups[i]; p.y += p.vy;
+                if (Math.abs(p.x - player.x) < player.width/2 + p.size && Math.abs(p.y - player.y) < player.height/2 + p.size) {
+                    playSound(sfxShoot); 
+                    if(p.type === 'weapon' && player.weaponLevel < 3) {
+                        player.weaponLevel++;
+                        document.getElementById('weapon-display').innerText = weaponNames[player.weaponLevel];
+                    }
+                    if(p.type === 'speed') player.speed += 1.5;
+                    if(p.type === 'rapid' && player.fireRate > 100) player.fireRate -= 60;
+                    powerups.splice(i, 1);
+                    continue;
+                }
+                if(p.y > canvas.height) powerups.splice(i, 1);
+            }
+
+            if (!boss) {
+                let edgeHit = false;
+                aliens.forEach(a => {
+                    if (!a.alive) return;
+                    a.x += alienSpeed * alienDirection;
+                    if (a.x > canvas.width - a.width/2 - 10 || a.x < a.width/2 + 10) edgeHit = true;
+                });
+
+                if (edgeHit) {
+                    alienDirection *= -1;
+                    alienSpeed += 0.3; // Speed up faster when hitting edges
+                    aliens.forEach(a => {
+                        a.y += 45 + (wave * 5); // Drop down much more aggressively
+                        if (a.alive && Math.abs(a.x - player.x) < player.width/2 + a.width/2 && Math.abs(a.y - player.y) < player.height/2 + a.height/2) {
+                            hitPlayer(timestamp);
+                        }
+                        if (a.alive && a.y > canvas.height - 100) gameOver(); // Lose if they reach the bottom
+                    });
+                }
+
+                if (aliens.every(a => !a.alive)) startNextWave();
+
+            } else {
+                boss.x += boss.vx;
+                if (boss.x > canvas.width - boss.width/2 || boss.x < boss.width/2) boss.vx *= -1;
+                
+                // Boss Collision with player
+                if (Math.abs(boss.x - player.x) < boss.width/2 + player.width/2 && Math.abs(boss.y - player.y) < boss.height/2 + player.height/2) {
+                    hitPlayer(timestamp);
+                }
+
+                if (timestamp - boss.lastShot > boss.fireRate) {
+                    boss.lastShot = timestamp;
+                    enemyBullets.push({ x: boss.x - 30, y: boss.y + boss.height/2, vy: 7 });
+                    enemyBullets.push({ x: boss.x + 30, y: boss.y + boss.height/2, vy: 7 });
+                }
+            }
+
+            for (let bIndex = bullets.length - 1; bIndex >= 0; bIndex--) {
+                let b = bullets[bIndex];
+                let hitSomething = false;
+
+                if (!boss) {
+                    for (let aIndex = 0; aIndex < aliens.length; aIndex++) {
+                        let a = aliens[aIndex];
+                        if (a.alive && Math.abs(b.x - a.x) < a.width/2 + 10 && Math.abs(b.y - a.y) < a.height/2 + 10) {
+                            a.alive = false; hitSomething = true;
+                            createExplosion(a.x, a.y, '#ff00ff'); playSound(sfxExplosion);
+                            addKill();
+                            if (Math.random() < 0.1) spawnPowerup(a.x, a.y); 
+                            break;
+                        }
+                    }
+                } else {
+                    if (Math.abs(b.x - boss.x) < boss.width/2 && Math.abs(b.y - boss.y) < boss.height/2) {
+                        boss.hp--; hitSomething = true;
+                        createExplosion(b.x, b.y, '#ff0000', 0.4); 
+                        score += 5; updateHUD();
+                        if (boss.hp <= 0) {
+                            createExplosion(boss.x, boss.y, '#ff0000', 3); 
+                            playSound(sfxExplosion);
+                            score += 500; updateHUD();
+                            setTimeout(startNextWave, 2000); 
+                            boss = null;
+                        }
+                    }
+                }
+
+                if (hitSomething && !b.pierce) bullets.splice(bIndex, 1);
+            }
+
+            for (let i = 0; i < enemyBullets.length; i++) {
+                let eb = enemyBullets[i];
+                if (Math.abs(eb.x - player.x) < player.width/2 - 5 && Math.abs(eb.y - player.y) < player.height/2 - 5) {
+                    hitPlayer(timestamp);
+                    enemyBullets.splice(i, 1); // Delete bullet on hit
+                    break;
+                }
+            }
+        }
+
+        function draw(timestamp) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawEntities(timestamp);
+            drawEffects();
+        }
+
+        function loop(timestamp) {
+            if (!timestamp) timestamp = 0;
+            update(timestamp);
+            draw(timestamp);
+            animationId = requestAnimationFrame(loop);
+        }
+
+        function gameOver() {
+            isGameOver = true;
+            createExplosion(player.x, player.y, '#00ffff', 2); 
+            playSound(sfxExplosion); 
+            document.getElementById('game-over').style.display = 'block';
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('invadersHighScore', highScore);
+            }
+            updateHUD();
+        }
+
+        function resetGame() {
+            score = 0; wave = 1; 
+            document.getElementById('game-over').style.display = 'none';
+            player.x = canvas.width / 2; player.y = canvas.height - 250;
+            player.weaponLevel = 0; player.speed = player.baseSpeed; player.fireRate = player.baseFireRate;
+            player.hp = player.maxHp; player.killsForNuke = 0; player.invulnerableUntil = 0;
+            document.getElementById('weapon-display').innerText = weaponNames[0];
+            updateHUD();
+            
+            bullets = []; enemyBullets = []; particles = []; flashes = []; powerups = []; alienSpeed = 1; boss = null;
+            input.left = false; input.right = false; input.up = false; input.down = false; input.shoot = false;
+            initAliens(); isGameOver = false;
+        }
+
+        // --- INPUT HANDLING ---
+        window.addEventListener('touchstart', startMusic, { once: true });
+        window.addEventListener('click', startMusic, { once: true });
+
+        // Helper to map UI buttons to inputs
+        function bindBtn(id, key) {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); input[key] = true; startMusic(); }, {passive: false});
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); input[key] = false; }, {passive: false});
+            btn.addEventListener('touchcancel', (e) => { e.preventDefault(); input[key] = false; }, {passive: false}); 
+        }
+
+        bindBtn('up-btn', 'up');
+        bindBtn('down-btn', 'down');
+        bindBtn('left-btn', 'left');
+        bindBtn('right-btn', 'right');
+        bindBtn('shoot-btn', 'shoot');
+
+        document.getElementById('nuke-btn').addEventListener('touchstart', (e) => { 
+            e.preventDefault(); triggerNuke(); startMusic(); 
+        }, {passive: false});
+
+        window.addEventListener('keydown', (e) => {
+            startMusic(); 
+            if (e.key === 'ArrowLeft' || e.key === 'a') input.left = true;
+            if (e.key === 'ArrowRight' || e.key === 'd') input.right = true;
+            if (e.key === 'ArrowUp' || e.key === 'w') input.up = true;
+            if (e.key === 'ArrowDown' || e.key === 's') input.down = true;
+            if (e.key === ' ') input.shoot = true;
+            if (e.key === 'Shift' || e.key === 'n') triggerNuke();
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a') input.left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd') input.right = false;
+            if (e.key === 'ArrowUp' || e.key === 'w') input.up = false;
+            if (e.key === 'ArrowDown' || e.key === 's') input.down = false;
+            if (e.key === ' ') input.shoot = false;
+        });
+
+        resize();
+        player.x = canvas.width / 2;
+        player.y = canvas.height - 250;
+        updateHUD();
+        initAliens();
+    </script>
+</body>
+</html>
