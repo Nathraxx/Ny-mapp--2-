@@ -3,16 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Android Invaders: Omni & Nuke Edition</title>
+    <title>Android Invaders: Rebalanced</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
-            background-color: #020208;
-            color: white;
+            background-color: #000; 
+            display: flex; justify-content: center; align-items: center;
             font-family: 'Courier New', Courier, monospace;
             overflow: hidden; touch-action: none;
         }
-        canvas { display: block; width: 100%; height: 100%; }
+
+        #game-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 500px; 
+            height: 100%;
+            background-color: #020208;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+        }
+
+        canvas { 
+            display: block; width: 100%; height: 100%; 
+            object-fit: contain; 
+        }
         
         #ui {
             position: absolute; top: 10px; left: 10px; right: 10px;
@@ -40,7 +54,6 @@
         }
         #restart-btn:active { background: rgba(0, 255, 0, 0.2); }
         
-        /* New Omni-directional Controls */
         #controls {
             position: absolute; bottom: 20px; left: 0; width: 100%;
             display: flex; justify-content: space-between; align-items: flex-end; 
@@ -86,36 +99,38 @@
 </head>
 <body>
 
-    <div id="ui">
-        <div class="ui-column">
-            <div>HP: <span id="hp-display">❤️❤️❤️</span></div>
-            <div>SCORE: <span id="score">0</span></div>
-            <div>WAVE: <span id="wave">1</span></div>
+    <div id="game-wrapper">
+        <div id="ui">
+            <div class="ui-column">
+                <div>HP: <span id="hp-display">❤️❤️❤️</span></div>
+                <div>SCORE: <span id="score">0</span></div>
+                <div>WAVE: <span id="wave">1</span></div>
+            </div>
+            <div class="ui-column text-right">
+                <div>HIGH: <span id="highscore">0</span></div>
+                <div class="weapon-text" id="weapon-display">LVL 0: SINGLE</div>
+                <div id="nuke-display" style="color: gray; text-shadow: none;">NUKE: 0/50</div>
+            </div>
         </div>
-        <div class="ui-column text-right">
-            <div>HIGH: <span id="highscore">0</span></div>
-            <div class="weapon-text" id="weapon-display">LVL 0: SINGLE</div>
-            <div id="nuke-display" style="color: gray; text-shadow: none;">NUKE: 0/50</div>
+
+        <div id="game-over">
+            <h1>GAME OVER</h1>
+            <button id="restart-btn" onclick="resetGame()">TAP TO RESTART</button>
         </div>
-    </div>
 
-    <div id="game-over">
-        <h1>GAME OVER</h1>
-        <button id="restart-btn" onclick="resetGame()">TAP TO RESTART</button>
-    </div>
+        <canvas id="gameCanvas"></canvas>
 
-    <canvas id="gameCanvas"></canvas>
-
-    <div id="controls">
-        <div class="d-pad">
-            <div class="btn" id="up-btn">▲</div>
-            <div class="btn" id="left-btn">◀</div>
-            <div class="btn" id="right-btn">▶</div>
-            <div class="btn" id="down-btn">▼</div>
-        </div>
-        <div class="action-buttons">
-            <div class="btn" id="nuke-btn">☢️</div>
-            <div class="btn" id="shoot-btn">🔥</div>
+        <div id="controls">
+            <div class="d-pad">
+                <div class="btn" id="up-btn">▲</div>
+                <div class="btn" id="left-btn">◀</div>
+                <div class="btn" id="right-btn">▶</div>
+                <div class="btn" id="down-btn">▼</div>
+            </div>
+            <div class="action-buttons">
+                <div class="btn" id="nuke-btn">☢️</div>
+                <div class="btn" id="shoot-btn">🔥</div>
+            </div>
         </div>
     </div>
 
@@ -123,12 +138,8 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            initStars();
-        }
-        window.addEventListener('resize', resize);
+        canvas.width = 400;
+        canvas.height = 800;
 
         // --- AUDIO ---
         const bgMusic = new Audio('2019-12-11_-_Retro_Platforming_-_David_Fesliyan.mp3');
@@ -147,6 +158,9 @@
             if (!musicStarted) return; 
             const clone = audioNode.cloneNode();
             clone.volume = audioNode.volume;
+            if (audioNode === sfxExplosion) {
+                clone.currentTime = 0.15; 
+            }
             clone.play().catch(e => {});
         }
 
@@ -187,11 +201,12 @@
         let flashes = []; 
         let particles = [];
         let stars = [];
+        
+        // REBALANCED ALIEN VARS
         let alienDirection = 1;
-        let alienSpeed = 1;
+        let alienSpeed = 0.5; // Slower start
         let boss = null; 
 
-        // --- HUD UPDATER ---
         function updateHUD() {
             document.getElementById('score').innerText = score;
             document.getElementById('wave').innerText = wave;
@@ -237,7 +252,6 @@
             }
         }
 
-        // --- SPAWNING LOGIC ---
         function startNextWave() {
             wave++;
             bullets = []; enemyBullets = []; powerups = [];
@@ -246,12 +260,13 @@
                 boss = {
                     x: canvas.width / 2, y: 100, width: 120, height: 120,
                     hp: 50 + (wave * 15), maxHp: 50 + (wave * 15),
-                    vx: 3 + (wave * 0.2), lastShot: 0, fireRate: 700 - (wave * 20)
+                    vx: 2 + (wave * 0.1), lastShot: 0, fireRate: 700 - (wave * 20)
                 };
                 aliens = []; 
             } else {
                 boss = null;
-                alienSpeed = 1 + (wave * 0.2); 
+                // REBALANCED SPEED SCALING
+                alienSpeed = 0.5 + (wave * 0.1); 
                 initAliens();
             }
             updateHUD();
@@ -259,11 +274,19 @@
 
         function initAliens() {
             aliens = [];
-            const rows = 4, cols = 5, padding = 65; 
-            const startX = 50, startY = 70;
+            // REBALANCED SPACING AND SIZE
+            const rows = 4, cols = 5, padding = 50; 
+            const startX = 100, startY = 60; 
+            
             for (let r = 0; r < rows; r++) {
                 for (let c = 0; c < cols; c++) {
-                    aliens.push({ x: startX + c * padding, y: startY + r * padding, width: 35, height: 35, alive: true });
+                    aliens.push({ 
+                        x: startX + c * padding, 
+                        y: startY + r * padding, 
+                        targetY: startY + r * padding,
+                        width: 25, height: 25, // Smaller hitboxes and visuals
+                        alive: true 
+                    });
                 }
             }
         }
@@ -288,7 +311,6 @@
             updateHUD();
         }
 
-        // --- ACTIONS ---
         function hitPlayer(timestamp) {
             if (timestamp < player.invulnerableUntil || isGameOver) return;
             
@@ -300,7 +322,7 @@
             if (player.hp <= 0) {
                 gameOver();
             } else {
-                player.invulnerableUntil = timestamp + 1000; // 1 second of I-Frames
+                player.invulnerableUntil = timestamp + 1000; 
             }
         }
 
@@ -309,7 +331,6 @@
                 player.killsForNuke = 0;
                 playSound(sfxExplosion); 
                 
-                // Nuke Screen Flash
                 flashes.push({ x: canvas.width/2, y: canvas.height/2, radius: canvas.height, life: 1.0, color: '#ffaa00' });
                 
                 aliens.forEach(a => {
@@ -330,7 +351,7 @@
                     }
                 }
                 
-                enemyBullets = []; // Vaporize incoming fire
+                enemyBullets = []; 
                 updateHUD();
             }
         }
@@ -358,9 +379,7 @@
             }
         }
 
-        // --- DRAWING ---
         function drawEntities(timestamp) {
-            // Stars
             ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff';
             stars.forEach(s => {
                 ctx.globalAlpha = s.size / 2; ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI*2); ctx.fill();
@@ -369,7 +388,6 @@
             });
             ctx.globalAlpha = 1.0;
 
-            // Player (with I-Frame Blinking)
             if (!(timestamp < player.invulnerableUntil && Math.floor(timestamp / 100) % 2 === 0)) {
                 ctx.shadowBlur = 15; ctx.shadowColor = '#00ffff';
                 if (playerImg.complete && playerImg.naturalHeight !== 0) {
@@ -379,7 +397,6 @@
                 }
             }
 
-            // Aliens
             ctx.shadowColor = '#ff00ff';
             aliens.forEach(a => {
                 if (!a.alive) return;
@@ -390,7 +407,6 @@
                 }
             });
 
-            // Boss
             if (boss) {
                 ctx.shadowColor = '#ff0000';
                 if (alienImg.complete && alienImg.naturalHeight !== 0) {
@@ -403,7 +419,6 @@
                 ctx.fillStyle = '#f00'; ctx.fillRect(boss.x - 50, boss.y - boss.height/2 - 20, 100 * (boss.hp / boss.maxHp), 10);
             }
 
-            // Bullets
             ctx.shadowBlur = 10; ctx.shadowColor = '#00ffff'; ctx.fillStyle = '#ffffff'; 
             bullets.forEach(b => { 
                 if(b.pierce) { 
@@ -416,7 +431,6 @@
             ctx.shadowColor = '#ff0000'; ctx.fillStyle = '#ffaaaa'; 
             enemyBullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI*2); ctx.fill(); });
 
-            // Powerups
             powerups.forEach(p => {
                 ctx.shadowColor = p.color; ctx.fillStyle = '#222'; ctx.strokeStyle = p.color; ctx.lineWidth = 2;
                 ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); ctx.stroke();
@@ -439,24 +453,21 @@
             ctx.globalAlpha = 1.0; ctx.shadowBlur = 0; 
         }
 
-        // --- UPDATE LOOP ---
         function update(timestamp) {
             if (isGameOver) return;
 
             for(let i = flashes.length - 1; i >= 0; i--) { let f = flashes[i]; f.radius += 2; f.life -= 0.1; if(f.life <= 0) flashes.splice(i, 1); }
             for(let i = particles.length - 1; i >= 0; i--) { let p = particles[i]; p.x += p.vx; p.y += p.vy; p.life -= p.decay; if(p.life <= 0) particles.splice(i, 1); }
 
-            // OMNI-DIRECTIONAL MOVEMENT
             if (input.left && !input.right) player.x -= player.speed;
             if (input.right && !input.left) player.x += player.speed;
             if (input.up && !input.down) player.y -= player.speed;
             if (input.down && !input.up) player.y += player.speed;
             
-            // Bounds
             if (player.x < player.width/2) player.x = player.width/2;
             if (player.x > canvas.width - player.width/2) player.x = canvas.width - player.width/2;
             if (player.y < player.height/2) player.y = player.height/2;
-            // Prevent player from hiding under the UI buttons
+            
             const bottomBoundary = canvas.height - player.height/2 - 190;
             if (player.y > bottomBoundary) player.y = bottomBoundary;
             
@@ -489,23 +500,39 @@
 
             if (!boss) {
                 let edgeHit = false;
+                
                 aliens.forEach(a => {
                     if (!a.alive) return;
                     a.x += alienSpeed * alienDirection;
-                    if (a.x > canvas.width - a.width/2 - 10 || a.x < a.width/2 + 10) edgeHit = true;
+                    if (a.x > canvas.width - a.width/2 - 10 && alienDirection === 1) edgeHit = true;
+                    if (a.x < a.width/2 + 10 && alienDirection === -1) edgeHit = true;
                 });
 
                 if (edgeHit) {
                     alienDirection *= -1;
-                    alienSpeed += 0.3; // Speed up faster when hitting edges
+                    // REBALANCED SPEED INCREASE ON EDGE HIT
+                    alienSpeed += 0.05; 
                     aliens.forEach(a => {
-                        a.y += 45 + (wave * 5); // Drop down much more aggressively
-                        if (a.alive && Math.abs(a.x - player.x) < player.width/2 + a.width/2 && Math.abs(a.y - player.y) < player.height/2 + a.height/2) {
-                            hitPlayer(timestamp);
-                        }
-                        if (a.alive && a.y > canvas.height - 100) gameOver(); // Lose if they reach the bottom
+                        // REBALANCED DROP DISTANCE
+                        a.targetY += 30 + (wave * 2); 
                     });
                 }
+
+                aliens.forEach(a => {
+                    if (!a.alive) return;
+                    
+                    // SMOOTHER DROP (slower animation)
+                    if (a.y < a.targetY) {
+                        a.y += 2; 
+                        if (a.y > a.targetY) a.y = a.targetY; 
+                    }
+
+                    if (Math.abs(a.x - player.x) < player.width/2 + a.width/2 && Math.abs(a.y - player.y) < player.height/2 + a.height/2) {
+                        hitPlayer(timestamp);
+                    }
+                    
+                    if (a.y > canvas.height - 100) gameOver(); 
+                });
 
                 if (aliens.every(a => !a.alive)) startNextWave();
 
@@ -513,7 +540,6 @@
                 boss.x += boss.vx;
                 if (boss.x > canvas.width - boss.width/2 || boss.x < boss.width/2) boss.vx *= -1;
                 
-                // Boss Collision with player
                 if (Math.abs(boss.x - player.x) < boss.width/2 + player.width/2 && Math.abs(boss.y - player.y) < boss.height/2 + player.height/2) {
                     hitPlayer(timestamp);
                 }
@@ -562,7 +588,7 @@
                 let eb = enemyBullets[i];
                 if (Math.abs(eb.x - player.x) < player.width/2 - 5 && Math.abs(eb.y - player.y) < player.height/2 - 5) {
                     hitPlayer(timestamp);
-                    enemyBullets.splice(i, 1); // Delete bullet on hit
+                    enemyBullets.splice(i, 1); 
                     break;
                 }
             }
@@ -602,16 +628,15 @@
             document.getElementById('weapon-display').innerText = weaponNames[0];
             updateHUD();
             
-            bullets = []; enemyBullets = []; particles = []; flashes = []; powerups = []; alienSpeed = 1; boss = null;
+            bullets = []; enemyBullets = []; particles = []; flashes = []; powerups = []; alienSpeed = 0.5; boss = null;
             input.left = false; input.right = false; input.up = false; input.down = false; input.shoot = false;
             initAliens(); isGameOver = false;
         }
 
-        // --- INPUT HANDLING ---
+        // --- INPUT ---
         window.addEventListener('touchstart', startMusic, { once: true });
         window.addEventListener('click', startMusic, { once: true });
 
-        // Helper to map UI buttons to inputs
         function bindBtn(id, key) {
             const btn = document.getElementById(id);
             btn.addEventListener('touchstart', (e) => { e.preventDefault(); input[key] = true; startMusic(); }, {passive: false});
@@ -646,7 +671,7 @@
             if (e.key === ' ') input.shoot = false;
         });
 
-        resize();
+        initStars();
         player.x = canvas.width / 2;
         player.y = canvas.height - 250;
         updateHUD();
